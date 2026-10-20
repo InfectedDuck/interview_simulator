@@ -1,19 +1,21 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export function InterviewTimer({ duration = 120, onTimeUp, active }) {
   const [remaining, setRemaining] = useState(duration);
   const intervalRef = useRef(null);
   const startTimeRef = useRef(null);
 
-  const getElapsed = useCallback(() => {
-    if (!startTimeRef.current) return 0;
-    return (Date.now() - startTimeRef.current) / 1000;
-  }, []);
+  const [wasActive, setWasActive] = useState(active);
+
+  // Reset the display when the timer starts, during render rather than in the effect.
+  if (active !== wasActive) {
+    setWasActive(active);
+    if (active) setRemaining(duration);
+  }
 
   useEffect(() => {
     if (active) {
       startTimeRef.current = Date.now();
-      setRemaining(duration);
       intervalRef.current = setInterval(() => {
         const elapsed = (Date.now() - startTimeRef.current) / 1000;
         const left = Math.max(0, duration - elapsed);

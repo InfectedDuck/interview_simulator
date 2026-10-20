@@ -1,4 +1,4 @@
-export function ScoreBoard({ overallScore, summaryFeedback, exchanges, sessionId }) {
+export function ScoreBoard({ overallScore, summaryFeedback, exchanges }) {
   return (
     <div className="score-board">
       <div className="overall-score">

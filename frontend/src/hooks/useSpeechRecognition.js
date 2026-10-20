@@ -32,84 +32,90 @@ export function useSpeechRecognition({ lang = "en-US", continuous = true } = {})
     return recognition;
   }, [lang, continuous]);
 
-  const startRecognition = useCallback((recognition) => {
-    recognition.onstart = () => {
-      setIsListening(true);
-      setError(null);
-      retryCountRef.current = 0; // Reset retries on successful start
-    };
+  const startRecognition = useCallback((initialRecognition) => {
+    // Named inner function so the network-retry path can re-attach handlers
+    // to a fresh instance without referencing startRecognition before it exists.
+    function attachHandlers(recognition) {
+      recognition.onstart = () => {
+        setIsListening(true);
+        setError(null);
+        retryCountRef.current = 0; // Reset retries on successful start
+      };
 
-    recognition.onresult = (event) => {
-      let interim = "";
-      let finalText = "";
-      for (let i = 0; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          finalText += result[0].transcript + " ";
-        } else {
-          interim += result[0].transcript;
-        }
-      }
-      finalTranscriptRef.current = finalText;
-      setTranscript(finalText + interim);
-    };
-
-    recognition.onerror = (event) => {
-      if (event.error === "aborted" || intentionalStopRef.current) {
-        return;
-      }
-
-      // Auto-retry on "network" error — Chrome bug where the service
-      // connection drops even with good internet
-      if (event.error === "network" && retryCountRef.current < maxRetries) {
-        retryCountRef.current++;
-        setError(`Connecting to speech service... (attempt ${retryCountRef.current + 1})`);
-        // Small delay then retry with a fresh instance
-        setTimeout(() => {
-          if (intentionalStopRef.current) return;
-          try {
-            const newRecognition = createRecognition();
-            recognitionRef.current = newRecognition;
-            startRecognition(newRecognition);
-            newRecognition.start();
-          } catch {
-            setError("Speech recognition failed. Use the 'Type Instead' button.");
-            setIsListening(false);
+      recognition.onresult = (event) => {
+        let interim = "";
+        let finalText = "";
+        for (let i = 0; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            finalText += result[0].transcript + " ";
+          } else {
+            interim += result[0].transcript;
           }
-        }, 500 * retryCountRef.current); // Increasing delay: 500ms, 1000ms, 1500ms
-        return;
-      }
+        }
+        finalTranscriptRef.current = finalText;
+        setTranscript(finalText + interim);
+      };
 
-      // "not-allowed" means mic permission denied
-      if (event.error === "not-allowed") {
-        setError("Microphone access denied. Please allow microphone in browser settings.");
-      } else if (event.error === "network") {
-        setError("Speech service unreachable after retries. Use the 'Type Instead' button.");
-      } else {
-        setError(`Speech recognition error: ${event.error}`);
-      }
-      setIsListening(false);
-    };
+      recognition.onerror = (event) => {
+        if (event.error === "aborted" || intentionalStopRef.current) {
+          return;
+        }
 
-    recognition.onend = () => {
-      if (intentionalStopRef.current) {
+        // Auto-retry on "network" error — Chrome bug where the service
+        // connection drops even with good internet
+        if (event.error === "network" && retryCountRef.current < maxRetries) {
+          retryCountRef.current++;
+          setError(`Connecting to speech service... (attempt ${retryCountRef.current + 1})`);
+          // Small delay then retry with a fresh instance
+          setTimeout(() => {
+            if (intentionalStopRef.current) return;
+            try {
+              const newRecognition = createRecognition();
+              recognitionRef.current = newRecognition;
+              attachHandlers(newRecognition);
+              newRecognition.start();
+            } catch {
+              setError("Speech recognition failed. Use the 'Type Instead' button.");
+              setIsListening(false);
+            }
+          }, 500 * retryCountRef.current); // Increasing delay: 500ms, 1000ms, 1500ms
+          return;
+        }
+
+        // "not-allowed" means mic permission denied
+        if (event.error === "not-allowed") {
+          setError("Microphone access denied. Please allow microphone in browser settings.");
+        } else if (event.error === "network") {
+          setError("Speech service unreachable after retries. Use the 'Type Instead' button.");
+        } else {
+          setError(`Speech recognition error: ${event.error}`);
+        }
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        if (intentionalStopRef.current) {
+          setIsListening(false);
+          setTranscript(finalTranscriptRef.current.trim());
+          return;
+        }
+        // In continuous mode, auto-restart if it stops unexpectedly
+        // (Chrome sometimes stops after ~60s of silence)
+        if (continuous && !intentionalStopRef.current && retryCountRef.current === 0) {
+          try {
+            recognition.start();
+            return;
+          } catch {
+            // Falls through to stop
+          }
+        }
         setIsListening(false);
         setTranscript(finalTranscriptRef.current.trim());
-        return;
-      }
-      // In continuous mode, auto-restart if it stops unexpectedly
-      // (Chrome sometimes stops after ~60s of silence)
-      if (continuous && !intentionalStopRef.current && retryCountRef.current === 0) {
-        try {
-          recognition.start();
-          return;
-        } catch {
-          // Falls through to stop
-        }
-      }
-      setIsListening(false);
-      setTranscript(finalTranscriptRef.current.trim());
-    };
+      };
+    }
+
+    attachHandlers(initialRecognition);
   }, [continuous, createRecognition]);
 
   const start = useCallback(() => {

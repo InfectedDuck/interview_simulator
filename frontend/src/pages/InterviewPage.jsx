@@ -99,7 +99,7 @@ export function InterviewPage() {
     }
   };
 
-  const handleTimeUp = useCallback((elapsed) => {
+  const handleTimeUp = useCallback(() => {
     // In simulation mode, auto-submit with what we have
     setTimerActive(false);
   }, []);
